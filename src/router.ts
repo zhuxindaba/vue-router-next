@@ -108,9 +108,7 @@ export function createRouter({
 }: RouterOptions): Router {
   const matcher: ReturnType<typeof createRouterMatcher> = createRouterMatcher(
     routes,
-    {},
-    encodeParam,
-    decode
+    {}
   )
 
   const beforeGuards = useCallbacks<NavigationGuard>()
@@ -126,14 +124,27 @@ export function createRouter({
     return history.base + to.fullPath
   }
 
+  // TODO: move these two somewhere else
   function encodeParams(params: RouteParams): RouteParams {
-    // TODO:
-    return params
+    const newParams: RouteParams = {}
+    for (const key in params) {
+      const value = params[key]
+      newParams[key] = Array.isArray(value)
+        ? value.map(encodeParam)
+        : encodeParam(value)
+    }
+
+    return newParams
   }
 
   function decodeParams(params: RouteParams): RouteParams {
-    // TODO:
-    return params
+    const newParams: RouteParams = {}
+    for (const key in params) {
+      const value = params[key]
+      newParams[key] = Array.isArray(value) ? value.map(decode) : decode(value)
+    }
+
+    return newParams
   }
 
   function resolve(
@@ -163,6 +174,7 @@ export function createRouter({
       return {
         ...locationNormalized,
         ...matchedRoute,
+        params: decodeParams(matchedRoute.params),
         redirectedFrom,
       }
     }
