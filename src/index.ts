@@ -31,7 +31,7 @@ export function RouterPlugin(app: App, router: Router) {
       if (!started) {
         // TODO: this initial navigation is only necessary on client, on server it doesn't make sense
         // because it will create an extra unecessary navigation and could lead to problems
-        router.push(router.history.location).catch(err => {
+        router.push(router.history.location.fullPath).catch((err: Error) => {
           console.error('Unhandled error', err)
         })
         started = true
