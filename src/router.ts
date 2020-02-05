@@ -10,7 +10,6 @@ import {
   TODO,
   Immutable,
   RouteParams,
-  MatcherLocationNormalized,
 } from './types'
 import {
   RouterHistory,
@@ -68,39 +67,11 @@ export interface Router {
   beforeEach(guard: NavigationGuard): ListenerRemover
   afterEach(guard: PostNavigationGuard): ListenerRemover
 
-  // TODO: also return a ListenerRemover
-  onError(handler: ErrorHandler): void
+  onError(handler: ErrorHandler): ListenerRemover
   isReady(): Promise<void>
 }
 
 const isClient = typeof window !== 'undefined'
-
-async function runGuardQueue(guards: Lazy<any>[]): Promise<void> {
-  for (const guard of guards) {
-    await guard()
-  }
-}
-
-function extractChangingRecords(
-  to: RouteLocationNormalized,
-  from: RouteLocationNormalized
-) {
-  const leavingRecords: RouteRecordMatched[] = []
-  const updatingRecords: RouteRecordMatched[] = []
-  const enteringRecords: RouteRecordMatched[] = []
-
-  // TODO: could be optimized with one single for loop
-  for (const record of from.matched) {
-    if (to.matched.indexOf(record) < 0) leavingRecords.push(record)
-    else updatingRecords.push(record)
-  }
-
-  for (const record of to.matched) {
-    if (from.matched.indexOf(record) < 0) enteringRecords.push(record)
-  }
-
-  return [leavingRecords, updatingRecords, enteringRecords]
-}
 
 export function createRouter({
   history,
@@ -164,12 +135,11 @@ export function createRouter({
   ): RouteLocationNormalized {
     // const objectLocation = routerLocationAsObject(location)
     if (typeof location === 'string') {
-      // TODO: remove as cast when redirect is removed from matcher
       let locationNormalized = parseURL(parseQuery, location)
       let matchedRoute = matcher.resolve(
         { path: locationNormalized.path },
         currentLocation
-      ) as MatcherLocationNormalized
+      )
 
       return {
         ...locationNormalized,
@@ -183,14 +153,13 @@ export function createRouter({
 
     // relative or named location, path is ignored
     // for same reason TS thinks location.params can be undefined
-    // TODO: remove cast like above
     let matchedRoute = matcher.resolve(
       hasParams
         ? // we know we have the params attribute
           { ...location, params: encodeParams((location as any).params) }
         : location,
       currentLocation
-    ) as MatcherLocationNormalized
+    )
 
     // put back the unencoded params as given by the user (avoid the cost of decoding them)
     matchedRoute.params = hasParams
@@ -210,87 +179,6 @@ export function createRouter({
     }
   }
 
-  // function oldresolveLocation(
-  //   location: MatcherLocation & Required<RouteQueryAndHash>,
-  //   currentLocation?: RouteLocationNormalized,
-  //   redirectedFrom?: RouteLocationNormalized
-  //   // ensure when returning that the redirectedFrom is a normalized location
-  // ): RouteLocationNormalized {
-  //   currentLocation = currentLocation || currentRoute.value
-  //   // TODO: still return a normalized location with no matched records if no location is found
-  //   const matchedRoute = matcher.resolve(location, currentLocation)
-
-  //   if ('redirect' in matchedRoute) {
-  //     const { redirect } = matchedRoute
-  //     // target location normalized, used if we want to redirect again
-  //     const normalizedLocation: RouteLocationNormalized = {
-  //       ...matchedRoute.normalizedLocation,
-  //       ...normalizeLocation({
-  //         path: matchedRoute.normalizedLocation.path,
-  //         query: location.query,
-  //         hash: location.hash,
-  //       }),
-  //       redirectedFrom,
-  //       meta: {},
-  //     }
-
-  //     if (typeof redirect === 'string') {
-  //       // match the redirect instead
-  //       return resolveLocation(
-  //         normalizeLocation(redirect),
-  //         currentLocation,
-  //         normalizedLocation
-  //       )
-  //     } else if (typeof redirect === 'function') {
-  //       const newLocation = redirect(normalizedLocation)
-
-  //       if (typeof newLocation === 'string') {
-  //         return resolveLocation(
-  //           normalizeLocation(newLocation),
-  //           currentLocation,
-  //           normalizedLocation
-  //         )
-  //       }
-
-  //       // TODO: should we allow partial redirects? I think we should not because it's impredictable if
-  //       // there was a redirect before
-  //       // if (!('path' in newLocation) && !('name' in newLocation)) throw new Error('TODO: redirect canot be relative')
-
-  //       return resolveLocation(
-  //         {
-  //           ...newLocation,
-  //           query: newLocation.query || {},
-  //           hash: newLocation.hash || '',
-  //         },
-  //         currentLocation,
-  //         normalizedLocation
-  //       )
-  //     } else {
-  //       return resolveLocation(
-  //         {
-  //           ...redirect,
-  //           query: redirect.query || {},
-  //           hash: redirect.hash || '',
-  //         },
-  //         currentLocation,
-  //         normalizedLocation
-  //       )
-  //     }
-  //   } else {
-  //     // add the redirectedFrom field
-  //     const url = normalizeLocation({
-  //       path: matchedRoute.path,
-  //       query: location.query,
-  //       hash: location.hash,
-  //     })
-  //     return {
-  //       ...matchedRoute,
-  //       ...url,
-  //       redirectedFrom,
-  //     }
-  //   }
-  // }
-
   async function push(to: RouteLocation): Promise<RouteLocationNormalized> {
     const toLocation: RouteLocationNormalized = (pendingLocation = resolve(to))
 
@@ -309,7 +197,6 @@ export function createRouter({
       if (NavigationGuardRedirect.is(error)) {
         // push was called while waiting in guards
         if (pendingLocation !== toLocation) {
-          // TODO: trigger onError as well
           triggerError(new NavigationCancelled(toLocation, currentRoute.value))
         }
         // TODO: setup redirect stack
@@ -317,7 +204,6 @@ export function createRouter({
         return push(error.to)
       } else {
         // TODO: write tests
-        // triggerError as well
         if (pendingLocation !== toLocation) {
           // TODO: trigger onError as well
           triggerError(new NavigationCancelled(toLocation, currentRoute.value))
@@ -577,4 +463,31 @@ export function createRouter({
   }
 
   return router
+}
+
+async function runGuardQueue(guards: Lazy<any>[]): Promise<void> {
+  for (const guard of guards) {
+    await guard()
+  }
+}
+
+function extractChangingRecords(
+  to: RouteLocationNormalized,
+  from: RouteLocationNormalized
+) {
+  const leavingRecords: RouteRecordMatched[] = []
+  const updatingRecords: RouteRecordMatched[] = []
+  const enteringRecords: RouteRecordMatched[] = []
+
+  // TODO: could be optimized with one single for loop
+  for (const record of from.matched) {
+    if (to.matched.indexOf(record) < 0) leavingRecords.push(record)
+    else updatingRecords.push(record)
+  }
+
+  for (const record of to.matched) {
+    if (from.matched.indexOf(record) < 0) enteringRecords.push(record)
+  }
+
+  return [leavingRecords, updatingRecords, enteringRecords]
 }
