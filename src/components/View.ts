@@ -10,6 +10,7 @@ import {
   unref,
   SetupContext,
   toRefs,
+  KeepAlive,
 } from 'vue'
 import {
   RouteLocationMatched,
@@ -25,6 +26,7 @@ import {
 interface ViewProps {
   route: RouteLocationNormalizedResolved
   name: string
+  keepAlive?: boolean
 }
 
 type UseViewOptions = VueUseOptions<ViewProps>
@@ -63,14 +65,16 @@ export function useView(options: UseViewOptions) {
   }
 
   return (attrs: SetupContext['attrs']) => {
-    return ViewComponent.value
-      ? h(ViewComponent.value as any, {
-          ...propsData.value,
-          ...attrs,
-          onVnodeMounted,
-          ref: viewRef,
-        })
-      : null
+    const Component = ViewComponent.value
+    if (!Component) return null
+    const ComponentVnode = h(Component, {
+      ...propsData.value,
+      ...attrs,
+      onVnodeMounted,
+      ref: viewRef,
+    })
+
+    return options.keepAlive ? h(KeepAlive, {}, ComponentVnode) : ComponentVnode
   }
 }
 
@@ -81,11 +85,12 @@ export const View = defineComponent({
       type: String as PropType<string>,
       default: 'default',
     },
+    keepAlive: Boolean,
   },
 
   setup(props, { attrs }) {
     const route = inject(routeLocationKey)!
-    const renderView = useView({ route, name: toRefs(props).name })
+    const renderView = useView({ route, ...toRefs(props) })
 
     return () => renderView(attrs)
   },
